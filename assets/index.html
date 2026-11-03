@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PS5 Sync Clock</title>
+<style>
+  :root {
+    --bg: #f6f8fc;
+    --surface: rgba(255, 255, 255, .82);
+    --surface-solid: #ffffff;
+    --surface-2: #edf3fb;
+    --line: rgba(31, 47, 78, .12);
+    --text: #111827;
+    --muted: #697588;
+    --accent: #1769ff;
+    --accent-2: #6d8dff;
+    --danger: #d84c5b;
+    --shadow: rgba(37, 51, 81, .16);
+    --soft-shadow: 0 14px 36px rgba(39, 54, 84, .10);
+    --button-shadow: 0 12px 30px rgba(23, 105, 255, .22);
+    --app-bg: linear-gradient(145deg, #ffffff 0%, #f3f7ff 42%, #f8fbff 100%);
+    --control-bg: rgba(255, 255, 255, .64);
+  }
+
+  html.theme-dark,
+  body.theme-dark {
+    --bg: #101313;
+    --surface: rgba(25, 28, 28, .96);
+    --surface-solid: #202424;
+    --surface-2: #171a1a;
+    --line: rgba(240, 245, 240, .11);
+    --text: #f1f0eb;
+    --muted: #aaa8a1;
+    --accent: #2b86bd;
+    --accent-2: #1d5f8c;
+    --danger: #f06a78;
+    --shadow: rgba(0, 0, 0, .50);
+    --soft-shadow: 0 12px 30px rgba(0, 0, 0, .30);
+    --button-shadow: 0 12px 30px rgba(20, 103, 151, .25);
+    --app-bg: #101313;
+    --control-bg: rgba(35, 38, 38, .90);
+    color-scheme: dark;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+  }
+
+  /* always reserve the scrollbar so the centered layout (and the topbar)
+   * never shifts sideways when switching between short and tall tabs */
+  html {
+    overflow-y: scroll;
+    overflow-x: hidden;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+        "SF Pro Text", "Avenir Next", "Segoe UI", sans-serif;
+    font-size: 17px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  button:focus, button:focus-visible, input:focus, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .app {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 12px 18px 18px;
+    display: grid;
+    grid-template-rows: 44px minmax(0, 1fr) auto;
+    gap: 10px;
+    background: var(--app-bg);
+    min-height: 100vh;
+  }
+
+  /* ---------- topbar ---------- */
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* keep every control on one fixed-height row */
+    height: 44px;
+  }
+
+  .brand {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 760;
+    line-height: 44px; /* match control height so the row never grows */
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .version {
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 680;
+    min-width: 44px;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1.2;
+  }
+
+  /* "by Zubastic" credit, styled like the GC sidebar-version chip */
+  .by {
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 650;
+    letter-spacing: .01em;
+    vertical-align: middle;
+    line-height: 1.2;
+    margin-left: 2px;
+    white-space: nowrap;
+  }
+
+  /* recommended chip on the NTP console option */
+  .option-name {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .chip-recommended {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(23, 105, 255, .30);
+    background: rgba(23, 105, 255, .12);
+    color: var(--accent);
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: .02em;
+    white-space: nowrap;
+    text-transform: lowercase;
+  }
+
+  /* ---------- risk modal (Game Compressor style) ---------- */
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(9, 12, 20, .55);
+    backdrop-filter: blur(6px);
+  }
+
+  .modal-overlay.show {
+    display: flex;
+  }
+
+  .modal-box {
+    width: min(440px, 100%);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    background: var(--surface-solid);
+    box-shadow: 0 24px 60px rgba(9, 12, 20, .35);
+    padding: 22px 24px;
+  }
+
+  .modal-title {
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--danger);
+    font-size: 18px;
+    font-weight: 760;
+  }
+
+  .modal-title svg {
+    width: 20px;
+    height: 20px;
+    stroke: currentColor;
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: 0 0 auto;
+  }
+
+  .modal-text {
+    margin: 0 0 16px;
+    color: var(--text);
+    font-size: 14.5px;
+    line-height: 1.55;
+  }
+
+  .modal-text b {
+    font-weight: 760;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .modal-ok {
+    width: auto;
+    min-width: 96px;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  .icon-btn {
+    display: grid;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    color: var(--muted);
+    background: var(--control-bg);
+    border: 1px solid var(--line);
+    box-shadow: 0 8px 20px rgba(37, 51, 81, .08);
+    cursor: pointer;
+    transition: color .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
+  }
+
+  .icon-btn:hover {
+    background: var(--surface-solid);
+    color: var(--accent);
+  }
+
+  body.theme-dark .icon-btn:hover {
+    border-color: rgba(98, 176, 221, .34);
+    color: #bfe8ff;
+    background: rgba(43, 134, 189, .18);
+    box-shadow: 0 0 0 1px rgba(98, 176, 221, .08), 0 14px 30px rgba(0, 0, 0, .40);
+  }
+
+  .icon-btn svg {
+    width: 19px;
+    height: 19px;
+    stroke: currentColor;
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .icon-btn.is-danger:hover {
+    color: var(--danger);
+    border-color: rgba(216, 76, 91, .28);
+  }
+
+  body.theme-dark .icon-btn.is-danger:hover {
+    border-color: rgba(255, 154, 166, .50);
+    color: #ff9aa6;
+    background: rgba(135, 43, 56, .24);
+    box-shadow: 0 0 0 1px rgba(255, 154, 166, .12), 0 14px 30px rgba(0, 0, 0, .42);
+  }
+
+  .theme-toggle {
+    flex: 0 0 auto;
+    height: 44px;
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    align-items: center;
+    padding: 3px;
+    border-radius: 16px;
+    background: var(--control-bg);
+    border: 1px solid var(--line);
+    box-shadow: 0 8px 20px rgba(37, 51, 81, .08);
+  }
+
+  .theme-option {
+    min-width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    color: var(--muted);
+    transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+  }
+
+  .theme-option.is-selected {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 18px rgba(23, 105, 255, .18);
+  }
+
+  .theme-option:not(.is-selected):hover {
+    color: var(--accent);
+    background: var(--surface-2);
+    transform: translateY(-1px);
+  }
+
+  .theme-option svg {
+    width: 17px;
+    height: 17px;
+    stroke: currentColor;
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ---------- tabs (like Game Compressor .theme-toggle) ---------- */
+
+  .tabs {
+    flex: 0 0 auto;
+    height: 44px;
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    align-items: center;
+    justify-self: start;
+    padding: 3px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: var(--control-bg);
+    box-shadow: 0 8px 20px var(--shadow);
+  }
+
+  .tab {
+    min-width: 128px;
+    height: 38px;
+    padding: 0 16px;
+    border-radius: 14px;
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 650;
+    white-space: nowrap;
+    transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+  }
+
+  .tab.is-selected {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 18px rgba(23, 105, 255, .18);
+  }
+
+  /* hover on the inactive tab: same dimming treatment as theme options */
+  .tab:not(.is-selected):hover {
+    color: var(--accent);
+    background: var(--surface-2);
+    transform: translateY(-1px);
+  }
+
+  .tab-panel {
+    display: none;
+  }
+
+  .tab-panel.is-active {
+    display: grid;
+    gap: 14px;
+    align-content: start;
+    /* one crisp working-area card, like Game Compressor .content */
+    min-height: 850px;
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    background: var(--surface);
+    box-shadow: var(--soft-shadow);
+    padding: 26px 28px;
+    backdrop-filter: blur(22px);
+    overflow: hidden;
+  }
+
+  /* ---------- cards ---------- */
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--surface);
+    box-shadow: var(--soft-shadow);
+    padding: 22px 24px;
+    backdrop-filter: blur(22px);
+  }
+
+  /* inside the single working-area card the inner card melts into it */
+  .tab-panel .card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+    backdrop-filter: none;
+  }
+
+  .card h2 {
+    margin: 0 0 4px;
+    font-size: 19px;
+    font-weight: 720;
+  }
+
+  .card .hint {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* ---------- set-time options ---------- */
+
+  .options {
+    display: grid;
+    gap: 8px;
+    /* all three option blocks get the same height */
+    grid-auto-rows: 1fr;
+  }
+
+  .option {
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: var(--control-bg);
+    padding: 16px 18px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: min-content min-content;
+    gap: 3px 12px;
+    align-items: center;
+    align-content: center;
+  }
+
+  .option-name {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    font-weight: 700;
+    font-size: 17.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .option-desc {
+    grid-column: 1;
+    color: var(--muted);
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+
+  .primary-btn {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: center;
+    min-height: 48px;
+    height: 48px;
+    box-sizing: border-box;
+    /* identical size for Sync / Sync / Set in all rows */
+    width: 132px;
+    justify-self: stretch;
+    text-align: center;
+    padding: 0 22px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    font-size: 16.5px;
+    font-weight: 760;
+    box-shadow: var(--button-shadow);
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+  }
+
+  .primary-btn:hover {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+  }
+
+  .primary-btn:active {
+    transform: scale(.985);
+  }
+
+  .primary-btn:disabled {
+    cursor: default;
+    filter: saturate(.6);
+    opacity: .7;
+  }
+
+  /* manual row: the input sits in the same grid cell slot as the
+   * description of the other options, exactly level with the Set button */
+  .manual-input {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: center;
+    justify-self: stretch;
+    width: 100%;
+    height: 48px;
+    min-height: 48px;
+    box-sizing: border-box;
+    display: block;
+    line-height: 48px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--surface-solid);
+    color: var(--text);
+    font: inherit;
+    font-size: 16.5px;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .manual-input::placeholder {
+    color: var(--muted);
+  }
+
+  /* ---------- status ---------- */
+
+  .status {
+    min-height: 18px;
+    margin: 10px 0 0;
+    padding: 9px 12px;
+    border-radius: 12px;
+    font-size: 15px;
+    display: none;
+    word-break: break-word;
+  }
+
+  .status.show {
+    display: block;
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  .status.ok {
+    display: block;
+    background: rgba(23, 105, 255, .10);
+    color: var(--text);
+  }
+
+  .status.err {
+    display: block;
+    background: rgba(216, 76, 91, .12);
+    color: var(--danger);
+  }
+
+  /* ---------- clock table ---------- */
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15.5px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--muted);
+    font-weight: 680;
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  tr.domain td {
+    background: rgba(23, 105, 255, .07);
+    font-weight: 700;
+  }
+
+  tr.epoch td {
+    background: rgba(216, 76, 91, .12);
+    color: var(--danger);
+    font-weight: 700;
+  }
+
+  /* clickable data rows (tap to expand details) */
+  tr.data-row {
+    cursor: pointer;
+    transition: background .14s ease;
+  }
+
+  tr.data-row:hover td {
+    background: rgba(23, 105, 255, .06);
+  }
+
+  tr.data-row.is-open td {
+    background: rgba(23, 105, 255, .10);
+  }
+
+  tr.row-detail td {
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: normal;
+    word-break: break-word;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* detail fields stacked as label: value lines */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    align-items: baseline;
+  }
+
+  .detail-name {
+    color: var(--muted);
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  tr.err td {
+    color: var(--muted);
+  }
+
+  .dim {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ---------- terminated screen (like Game Compressor) ---------- */
+
+  .app.is-terminated {
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+  }
+
+  .terminated-screen {
+    width: min(520px, calc(100% - 40px));
+    margin: auto;
+    padding: 34px 28px;
+    text-align: center;
+  }
+
+  .terminated-icon {
+    width: 140px;
+    height: 140px;
+    margin: 0 auto 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 40px;
+    border: 1px solid rgba(216, 76, 91, .24);
+    background: rgba(255, 240, 242, .92);
+    color: var(--danger);
+    box-shadow: 0 20px 50px rgba(216, 76, 91, .18);
+  }
+
+  html.theme-dark .terminated-icon,
+  body.theme-dark .terminated-icon {
+    border-color: rgba(255, 154, 166, .42);
+    background: linear-gradient(180deg, #b83246, #7f2230);
+    color: #fff7f8;
+    box-shadow: 0 20px 50px rgba(255, 154, 166, .10);
+  }
+
+  .terminated-icon svg {
+    width: 68px;
+    height: 68px;
+    stroke: currentColor;
+    stroke-width: 2.15;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .terminated-title {
+    margin: 0 0 8px;
+    color: var(--text);
+    font-size: 23px;
+    line-height: 1.15;
+    font-weight: 780;
+  }
+
+  .terminated-copy {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.45;
+    font-weight: 650;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 2px 0 10px;
+  }
+
+  /* ---------- responsive (Game Compressor breakpoints) ---------- */
+
+  @media (max-width: 980px) {
+    .app {
+      max-width: 720px;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .app {
+      padding: 10px;
+      gap: 10px;
+      /* topbar wraps to two rows on mobile: let it size itself */
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    /* hide the UNIX SEC and Human (UTC) columns on phones:
+     * the human time moves into the expandable row */
+    #times th:nth-child(3), #times td:nth-child(3),
+    #times th:nth-child(4), #times td:nth-child(4) {
+      display: none;
+    }
+
+    /* the table scrolls inside the card, not the page */
+    .tab-panel.is-active {
+      min-height: 0;
+      height: calc(100vh - 170px);
+      padding: 16px;
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    /* Management tab is short: do not stretch it, page stays scroll-free */
+    #panel-mgmt.is-active {
+      height: auto;
+      max-height: calc(100vh - 170px);
+      overflow: hidden;
+    }
+
+    .tab-panel .card {
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .table-wrap {
+      overflow-y: auto;
+      overflow-x: auto;
+      max-height: 100%;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+
+    .topbar {
+      height: auto;
+      flex-wrap: wrap;
+      row-gap: 8px;
+      gap: 6px;
+    }
+
+    /* row 1: brand left + controls right, everything must fit */
+    .brand {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 20px;
+      line-height: 40px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .version {
+      min-width: 0;
+    }
+
+    .spacer {
+      display: none;
+    }
+
+    .tabs {
+      order: 10;
+      flex: 1 1 100%;
+    }
+
+    .tab {
+      min-width: 0;
+      font-size: 15px;
+    }
+
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+    }
+
+    .theme-toggle {
+      height: 40px;
+      padding: 2px;
+    }
+    .theme-option {
+      min-width: 32px;
+      height: 34px;
+    }
+
+    .card {
+      padding: 16px;
+      border-radius: 20px;
+    }
+
+    .options {
+      gap: 9px;
+    }
+
+    .option {
+      padding: 13px 14px;
+      grid-template-rows: auto 1fr;
+      align-content: stretch;
+    }
+
+    /* multi-line descriptions stay top-aligned inside their flexible row */
+    .option-desc {
+      align-self: start;
+    }
+
+    .primary-btn {
+      height: 52px;
+      min-height: 52px;
+      padding: 0 12px;
+      grid-row: 2;
+      align-self: center;
+    }
+
+    /* keep the Set button and the input strictly level */
+    .manual-input {
+      height: 52px;
+      min-height: 52px;
+      line-height: normal;
+      font-size: 16px;
+      margin: 0;
+      grid-row: 2;
+      align-self: center;
+      justify-self: stretch;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .manual-input::-webkit-outer-spin-button,
+    .manual-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    /* keep table readable on narrow screens */
+    th:nth-child(2), td:nth-child(2) {
+      max-width: 170px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .app {
+      padding: 8px;
+      gap: 8px;
+    }
+
+    .topbar {
+      gap: 5px;
+    }
+
+    .brand {
+      font-size: 18px;
+    }
+
+    .card {
+      padding: 0;
+    }
+
+    .tab-panel.is-active {
+      padding: 13px 12px;
+    }
+
+    .option {
+      grid-template-columns: minmax(0, 1fr) auto;
+      padding: 11px 12px;
+    }
+
+    .option-desc {
+      font-size: 13.5px;
+    }
+
+    /* keep the recommended chip on its own line, full width free */
+    .option-name {
+      flex-wrap: wrap;
+      white-space: normal;
+    }
+
+    .chip-recommended {
+      height: 20px;
+      font-size: 10.5px;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <h1 class="brand">Sync Clock <span class="by">by Zubastic</span><span class="version" id="version"></span></h1>
+    <div class="spacer"></div>
+    <div class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab is-selected" id="tab-info" type="button" role="tab" aria-selected="true">Info</button>
+      <button class="tab" id="tab-mgmt" type="button" role="tab" aria-selected="false">Management</button>
+    </div>
+    <div class="theme-toggle" role="group" aria-label="Color mode">
+      <button class="theme-option" id="theme-dark" type="button" title="Dark mode" aria-label="Dark mode"></button>
+      <button class="theme-option" id="theme-light" type="button" title="Light mode" aria-label="Light mode"></button>
+    </div>
+    <button class="icon-btn is-danger" id="stop-btn" type="button" title="Stop payload"
+      aria-label="Stop payload"></button>
+  </div>
+
+  <div class="tab-panel is-active" id="panel-info">
+    <section class="card">
+      <h2>Current values</h2>
+      <div class="table-wrap">
+        <table id="times">
+          <tr><th>id</th><th>name</th><th>unix sec</th><th>human (UTC)</th></tr>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="tab-panel" id="panel-mgmt">
+    <section class="card">
+      <h2>Management</h2>
+      <div class="options">
+        <div class="option">
+          <span class="option-name">NTP via console <span class="chip-recommended">recommended</span></span>
+          <button class="primary-btn" id="ntp-console-btn" type="button">Sync</button>
+          <span class="option-desc">The console itself queries NTP servers over UDP/123.
+            Requires internet access on the PS5.</span>
+        </div>
+        <div class="option">
+          <span class="option-name">NTP via browser</span>
+          <button class="primary-btn" id="ntp-browser-btn" type="button">Sync</button>
+          <span class="option-desc">Queries HTTPS time APIs from this browser and sends
+            the corrected unix time to the console.</span>
+        </div>
+        <div class="option">
+          <span class="option-name">Manual</span>
+          <button class="primary-btn" id="manual-btn" type="button">Set</button>
+          <input id="ts" class="manual-input" type="number"
+            placeholder="unix seconds (UTC), e.g. 1793695000" inputmode="numeric">
+        </div>
+      </div>
+      <p class="status" id="msg"></p>
+    </section>
+  </div>
+
+  <footer>PS5 Sync Clock &mdash; time setting payload for jailbroken PS5 consoles</footer>
+</div>
+
+<div class="modal-overlay" id="risk-modal" role="dialog" aria-modal="true" aria-labelledby="risk-title">
+  <div class="modal-box">
+    <h3 class="modal-title" id="risk-title">
+      <span id="risk-icon" aria-hidden="true"></span>
+      Warning
+    </h3>
+    <p class="modal-text">
+      Changing the console clock may corrupt trophy data, NP sessions or
+      installed licenses. Everything you do here is <b>at your own risk</b>.
+    </p>
+    <div class="modal-actions">
+      <button class="primary-btn modal-ok" id="risk-ok" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const icons = {
+  power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m4.93 19.07 1.41-1.41"/><path d="m17.66 6.34 1.41-1.41"/>',
+  warn: '<path d="M12 3 2.5 19.5h19L12 3z"/><path d="M12 10v4"/><path d="M12 17.2v.1"/>',
+};
+
+function icon(name){
+  return '<svg viewBox="0 0 24 24" aria-hidden="true">'+icons[name]+'</svg>';
+}
+
+/* ---------- helpers ---------- */
+
+function post(url){
+  const x = new XMLHttpRequest();
+  x.open("POST", url, true);
+  return new Promise(function(res){ x.onload = ()=>res(x.responseText); x.onerror = ()=>res(null); x.send(null); });
+}
+
+function get(url){
+  const x = new XMLHttpRequest();
+  x.open("GET", url, true);
+  return new Promise(function(res){ x.onload = ()=>res(x.responseText); x.onerror = ()=>res(null); x.send(null); });
+}
+
+function setMsg(text, cls){
+  const m = document.getElementById("msg");
+  m.className = "status show" + (cls ? " " + cls : "");
+  m.textContent = text;
+}
+
+function fmt(v){
+  if(v === null || v === undefined) return "";
+  return new Date(v * 1000).toISOString().replace("T", " ").replace(/\.000Z$/, "");
+}
+
+const names = {
+  0: "CLOCK_REALTIME",
+  1: "CLOCK_VIRTUAL",
+  2: "CLOCK_PROF",
+  3: "CLOCK_UPTIME",
+  4: "CLOCK_MONOTONIC",
+  5: "CLOCK_UPTIME_PRECISE",
+  6: "CLOCK_UPTIME_FAST",
+  7: "CLOCK_REALTIME_PRECISE",
+  8: "CLOCK_REALTIME_FAST",
+  9: "CLOCK_MONOTONIC_FAST",
+  10: "CLOCK_MONOTONIC_PRECISE",
+  11: "CLOCK_MONOTONIC_RAW",
+  12: "CLOCK_MONOTONIC_RAW_APPROX",
+  13: "SBL boot tick",
+  14: "unused",
+  15: "proc-lifetime cputime",
+  16: "RTC dom 0 — USER wall",
+  17: "RTC dom 1 — NETWORK",
+  18: "SECURE (SAMU/srtc)",
+  19: "force domain 0",
+  20: "EMC timer raw",
+};
+
+/* descriptions shown in the expandable row (from the old prototype) */
+const descs = {
+  0: "system wall clock, settable via settimeofday",
+  1: "process user CPU time, counts only while running in user mode",
+  2: "process CPU time (profiling), user + system",
+  3: "time spent running since boot (?)",
+  4: "monotonic since boot, stops in sleep",
+  5: "uptime, high resolution, survives sleep",
+  6: "uptime, low resolution, cheap reads",
+  7: "realtime, high resolution",
+  8: "realtime, low resolution, cheap reads",
+  9: "behaves as a second realtime clock on PS5",
+  10: "monotonic, high resolution",
+  11: "raw hardware counter, no NTP drift correction",
+  12: "raw counter, approximated, cheap",
+  13: "Sony bootloader tick counter since power-on",
+  14: "unused on PS5",
+  15: "process-lifetime CPU time, never resets with the process",
+  16: "RTC domain 0 — user wall clock, writable via rtc_settime registry offset; this is the clock games show",
+  17: "RTC domain 1 — network time (NP / trophies), writable the same way",
+  18: "secure time (SAMU / srtc chip), read-only secure clock of the southbridge",
+  19: "Sony extension: force domain 0 (mirror of the user wall clock)",
+  20: "EMC timer raw — memory-controller counter, Sony extension",
+};
+
+/* ---------- info tab: live clock table ---------- */
+
+
+async function refresh(){
+  try{
+    const txt = await get("/api/time");
+    if(txt === null) return;
+    const j = JSON.parse(txt);
+    if(j.version){
+      const el = document.getElementById("version");
+      if(!el.textContent) el.textContent = j.version;
+    }
+    const t = document.getElementById("times");
+    const open = g_open_row;
+    let html = "<tr><th>id</th><th>name</th><th>unix sec</th><th>human (UTC)</th></tr>";
+    for(let id=0; id<=20; ++id){
+      const v = j[String(id)];
+      const nm = names[id]||"";
+      if(v !== null && v !== undefined){
+        const cls = (v === 0) ? " epoch" : (id===16||id===17||id===19) ? " domain" : "";
+        html += "<tr class='data-row"+cls+(open===id?" is-open":"")+"' data-id='"+id+"'>"+
+                "<td>"+id+"</td><td>"+nm+"</td><td>"+v+"</td><td>"+fmt(v)+"</td></tr>";
+        if(open===id){
+          html += "<tr class='row-detail'><td colspan='4'>"+detailHtml(id, v)+"</td></tr>";
+        }
+      }else{
+        const e = j["e"+id];
+        html += "<tr class='data-row"+(open===id?" is-open":"")+"' data-id='"+id+"'>"+
+                "<td>"+id+"</td><td>"+nm+"</td><td colspan='2'>unreadable (errno "+e+")</td></tr>";
+        if(open===id){
+          html += "<tr class='row-detail'><td colspan='4'>"+detailHtml(id, null, e)+"</td></tr>";
+        }
+      }
+    }
+    const rt = j.realtime;
+    const rtCls = (rt === 0) ? " epoch" : "";
+    html += "<tr class='data-row"+rtCls+(open===-1?" is-open":"")+"' data-id='-1'>"+
+            "<td>-</td><td>gettimeofday</td><td>"+rt+"</td><td>"+fmt(rt)+"</td></tr>";
+    if(open===-1){
+      html += "<tr class='row-detail'><td colspan='4'>"+detailHtml(-1, rt)+"</td></tr>";
+    }
+    t.innerHTML = html;
+  }catch(e){}
+}
+
+function detailHtml(id, v, errno){
+  let s = "<div class='detail-grid'>";
+  s += "<div class='detail-name'>Description:</div><div>" +
+       (descs.hasOwnProperty(id) ? descs[id] :
+        "plain timecounter used by libc time(3); reads the same wall time as CLOCK_REALTIME") +
+       "</div>";
+  s += "<div class='detail-name'>Value:</div><div>";
+  if(v === null || v === undefined){
+    s += "unreadable, errno " + errno;
+  }else if(v === 0){
+    s += "0 — stuck at 1970-01-01 00:00:00 UTC (never set)";
+  }else{
+    s += v;
+  }
+  s += "</div>";
+  s += "<div class='detail-name'>Human (UTC):</div><div>" +
+       ((v === null || v === undefined) ? "&mdash;" : (v === 0 ? "1970-01-01 00:00:00" : fmt(v))) +
+       "</div>";
+  s += "</div>";
+  return s;
+}
+
+/* tap a row to expand details between rows (mobile-friendly) */
+let g_open_row = null;
+document.getElementById("times").onclick = function(ev){
+  const tr = ev.target.closest("tr.data-row");
+  if(!tr) return;
+  const id = parseInt(tr.getAttribute("data-id"), 10);
+  g_open_row = (g_open_row === id) ? null : id;
+  refresh();
+};
+
+/* ---------- tabs ---------- */
+
+let g_risk_shown = false;
+function selectTab(which){
+  const info = which === "info";
+  document.getElementById("tab-info").classList.toggle("is-selected", info);
+  document.getElementById("tab-mgmt").classList.toggle("is-selected", !info);
+  document.getElementById("tab-info").setAttribute("aria-selected", info ? "true" : "false");
+  document.getElementById("tab-mgmt").setAttribute("aria-selected", info ? "false" : "true");
+  document.getElementById("panel-info").classList.toggle("is-active", info);
+  document.getElementById("panel-mgmt").classList.toggle("is-active", !info);
+  /* first visit to Management: show the risk warning modal */
+  if(!info && !g_risk_shown){
+    g_risk_shown = true;
+    document.getElementById("risk-modal").classList.add("show");
+  }
+  /* tabs have different heights: reset the scroll so the view never
+   * clamps or jumps when the page height changes */
+  window.scrollTo(0, 0);
+}
+document.getElementById("tab-info").onclick = ()=>selectTab("info");
+document.getElementById("tab-mgmt").onclick = ()=>selectTab("mgmt");
+
+/* ---------- risk modal ---------- */
+document.getElementById("risk-icon").innerHTML = icon("warn");
+document.getElementById("risk-ok").onclick = function(){
+  document.getElementById("risk-modal").classList.remove("show");
+};
+
+/* ---------- theme ---------- */
+
+function applyTheme(dark){
+  document.body.classList.toggle("theme-dark", dark);
+  document.body.classList.toggle("theme-light", !dark);
+  /* highlight the active theme option exactly like Game Compressor */
+  document.getElementById("theme-dark").classList.toggle("is-selected", dark);
+  document.getElementById("theme-light").classList.toggle("is-selected", !dark);
+  document.getElementById("theme-dark").setAttribute("aria-pressed", dark ? "true" : "false");
+  document.getElementById("theme-light").setAttribute("aria-pressed", dark ? "false" : "true");
+  try{ localStorage.setItem("sync-clock-theme", dark ? "dark" : "light"); }catch(e){}
+}
+document.getElementById("theme-dark").onclick = ()=>applyTheme(true);
+document.getElementById("theme-light").onclick = ()=>applyTheme(false);
+(function(){
+  let saved = null;
+  try{ saved = localStorage.getItem("sync-clock-theme"); }catch(e){}
+  applyTheme(saved ? saved === "dark" : true);
+})();
+
+/* ---------- management tab ---------- */
+
+/* normalize timeapi.io style responses: they return UTC without a Z suffix
+ * and sometimes with fractional seconds - Date.parse would treat them as
+ * local time. Add Z, trim fraction to milliseconds. */
+function parseIsoUtc(s){
+  s = s.trim();
+  if(/\.\d{4,}/.test(s)) s = s.replace(/(\.\d{3})\d+/, "$1");
+  if(!/[zZ]|[+-]\d\d:?\d\d$/.test(s)) s += "Z";
+  return Date.parse(s);
+}
+
+/* unix time from the browser's own HTTPS requests (Google / Cloudflare
+ * expose it in the Date header), compensated by RTT/2 */
+function headerTime(){
+  const x = new XMLHttpRequest();
+  x.open("HEAD", "https://cloudflare.com/cdn-cgi/trace", false);
+  const t0 = Date.now();
+  try{ x.send(null); }catch(e){ return null; }
+  const t1 = Date.now();
+  const d = x.getResponseHeader("Date");
+  if(!d) return null;
+  const server = Date.parse(d);
+  if(isNaN(server)) return null;
+  return Math.round(server + (t1 - t0) / 2000);
+}
+
+async function ntpBrowser(){
+  const btn = document.getElementById("ntp-browser-btn");
+  btn.disabled = true;
+  setMsg("querying time sources...");
+  try{
+    let ts = headerTime();
+    if(ts === null){
+      const r = await get("https://timeapi.io/api/Time/current/zone?timeZone=UTC");
+      if(r !== null){
+        const j = JSON.parse(r);
+        const ms = parseIsoUtc(j.dateTime);
+        if(!isNaN(ms)) ts = Math.round(ms / 1000);
+      }
+    }
+    if(ts === null || isNaN(ts)){
+      setMsg("could not determine time from HTTPS sources", "err");
+      return;
+    }
+    const resp = await get("/api/set?ts=" + ts);
+    if(resp !== null){
+      setMsg("time set to " + fmt(ts), "ok");
+      refresh();
+    }else{
+      setMsg("failed to reach the console API", "err");
+    }
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function ntpConsole(){
+  const btn = document.getElementById("ntp-console-btn");
+  btn.disabled = true;
+  setMsg("asking the console to run NTP sync (UDP/123)...");
+  try{
+    const resp = await post("/api/ntp");
+    setMsg(resp ? "console NTP sync done" : "failed to reach the console API", resp ? "ok" : "err");
+    refresh();
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function manualSet(){
+  const v = document.getElementById("ts").value;
+  const ts = parseInt(v, 10);
+  if(isNaN(ts) || ts <= 0){
+    setMsg("invalid unix seconds", "err");
+    return;
+  }
+  const resp = await get("/api/set?ts=" + ts);
+  if(resp !== null){
+    setMsg("time set to " + fmt(ts), "ok");
+    refresh();
+  }else{
+    setMsg("failed to reach the console API", "err");
+  }
+}
+
+document.getElementById("ntp-browser-btn").onclick = ntpBrowser;
+document.getElementById("ntp-console-btn").onclick = ntpConsole;
+document.getElementById("manual-btn").onclick = manualSet;
+
+/* ---------- stop payload ---------- */
+
+let g_timers_stopped = false;
+function stopTimers(){
+  if(g_timers_stopped) return;
+  g_timers_stopped = true;
+  clearInterval(g_refresh_timer);
+}
+
+function showTerminatedScreen(){
+  const app = document.querySelector(".app");
+  app.classList.add("is-terminated");
+  app.innerHTML =
+    '<div class="terminated-screen" role="status" aria-live="assertive">' +
+    '<div class="terminated-icon" aria-hidden="true">' + icon("power") + '</div>' +
+    '<h2 class="terminated-title">Sync Clock terminated</h2>' +
+    '<p class="terminated-copy">Exit this window. Relaunch sync-clock.elf to start the payload again.</p>' +
+    '</div>';
+}
+
+document.getElementById("stop-btn").onclick = ()=>{
+  if(!confirm("Stop Sync Clock now?\n\nThe web UI will stop responding until you relaunch the payload.")) return;
+  const btn = document.getElementById("stop-btn");
+  btn.disabled = true;
+  btn.title = "Stopping Sync Clock";
+  setMsg("stopping payload...");
+  stopTimers();
+  post("/api/quit").then(()=>showTerminatedScreen());
+};
+
+/* icons */
+document.getElementById("stop-btn").innerHTML = icon("power");
+document.getElementById("theme-dark").innerHTML = icon("moon");
+document.getElementById("theme-light").innerHTML = icon("sun");
+(function(){
+  const w = document.getElementById("warn-box");
+  if(w) w.insertAdjacentHTML("afterbegin", icon("warn"));
+})();
+
+const g_refresh_timer = setInterval(refresh, 1000);
+refresh();
+</script>
+</body>
+</html>
