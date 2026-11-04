@@ -36,7 +36,10 @@ typedef struct http_request {
 
 /*
  * Send a complete HTTP response with default headers
- * (Connection: close). Returns 0 on success, -1 on write error.
+ * (Cache-Control: no-store, Connection: close). `status` is the full
+ * reason string including the numeric code, e.g. "200 OK" or
+ * "404 Not Found" - the wire format needs the code on the status line.
+ * Returns 0 on success, -1 on write error.
  */
 int http_send(int fd, const char* status, const char* mime, const void* data,
               size_t size);

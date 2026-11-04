@@ -25,14 +25,20 @@ void http_request_shutdown(void) {
   g_shutdown_requested = 1;
 }
 
+/*
+ * Full status-line reason strings including the numeric code: the wire
+ * format requires "HTTP/1.1 200 OK"; a bare "OK" is an invalid status
+ * line that strict parsers (iOS Safari / WKWebView) reject outright,
+ * which made every XHR fail and the clock table stay empty on phones.
+ */
 static const char* status_text(int status) {
   switch (status) {
-    case 200: return "OK";
-    case 400: return "Bad Request";
-    case 404: return "Not Found";
-    case 405: return "Method Not Allowed";
-    case 500: return "Internal Server Error";
-    default: return "OK";
+    case 200: return "200 OK";
+    case 400: return "400 Bad Request";
+    case 404: return "404 Not Found";
+    case 405: return "405 Method Not Allowed";
+    case 500: return "500 Internal Server Error";
+    default: return "200 OK";
   }
 }
 
@@ -61,6 +67,7 @@ int http_send(int fd, const char* status, const char* mime, const void* data,
                            "HTTP/1.1 %s\r\n"
                            "Content-Type: %s\r\n"
                            "Content-Length: %zu\r\n"
+                           "Cache-Control: no-store\r\n"
                            "Connection: close\r\n"
                            "\r\n",
                            status, mime, size);
