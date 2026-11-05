@@ -65,7 +65,9 @@ int http_get_query_arg(const http_request_t* req, const char* name, char* out,
  * Bind a listening socket on `port` and run the single-threaded
  * accept/handle loop, dispatching every request to `handler`.
  * The loop runs until http_request_shutdown() is called from inside a
- * handler. Returns 0 on clean shutdown, 1 if the socket failed.
+ * handler, or websrv_request_restart() asks for a rest-mode recreate.
+ * Returns 0 on clean shutdown, 1 if the socket failed, 2 when a
+ * restart was requested (caller must call http_serve again).
  */
 int http_serve(unsigned short port,
                void (*handler)(const http_request_t* req));
@@ -75,3 +77,9 @@ int http_serve(unsigned short port,
  * (used by the "stop payload" endpoint).
  */
 void http_request_shutdown(void);
+
+/*
+ * Ask the accept loop to stop so main() can recreate the whole server
+ * (called by the rest-mode watcher after wake).
+ */
+void websrv_request_restart(void);

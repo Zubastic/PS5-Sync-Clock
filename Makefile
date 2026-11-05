@@ -11,6 +11,7 @@ STRIP    := $(PS5_PAYLOAD_SDK)/bin/prospero-strip
 PYTHON   ?= python3
 
 BIN := sync-clock.elf
+AUTOFIX_BIN := sync-clock-auto.elf
 BUILD_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 SRCS := src/main.cpp
@@ -20,11 +21,21 @@ SRCS += src/clock.cpp
 SRCS += src/sntp.cpp
 SRCS += src/asset.cpp
 SRCS += src/api.cpp
+SRCS += src/restwatch.cpp
+
+# Resident time-recovery daemon: startup fix + watcher that restores
+# time after every wake from rest mode.
+AUTOFIX_SRCS := src/syncauto_main.cpp
+AUTOFIX_SRCS += src/log.cpp
+AUTOFIX_SRCS += src/clock.cpp
+AUTOFIX_SRCS += src/restwatch.cpp
+AUTOFIX_SRCS += src/websrv.cpp
 
 ASSET := assets/index.html
 GEN_SRC := gen/assets/index.html.cpp
 
 OBJS := $(patsubst src/%.cpp,build/src/%.o,$(SRCS)) build/gen/assets/index.html.o
+AUTOFIX_OBJS := $(patsubst src/%.cpp,build/src/%.o,$(AUTOFIX_SRCS))
 
 CXXFLAGS := -Os -Wall -Wextra -std=c++17 -Isrc
 CXXFLAGS += -ffunction-sections -fdata-sections -flto
@@ -34,7 +45,7 @@ CXXFLAGS += -DSYNC_CLOCK_PORT=5915
 LDFLAGS := -Wl,--gc-sections -flto
 LDADD := -lSceNotification -lkernel
 
-all: $(BIN)
+all: $(BIN) $(AUTOFIX_BIN)
 
 gen/assets:
 	mkdir -p $@
@@ -54,7 +65,11 @@ $(BIN): $(OBJS) Makefile
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LDADD)
 	$(STRIP) --strip-all $@
 
+$(AUTOFIX_BIN): $(AUTOFIX_OBJS) Makefile
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(AUTOFIX_OBJS) $(LDADD)
+	$(STRIP) --strip-all $@
+
 clean:
-	rm -rf build gen $(BIN)
+	rm -rf build gen $(BIN) $(AUTOFIX_BIN)
 
 .PHONY: all clean

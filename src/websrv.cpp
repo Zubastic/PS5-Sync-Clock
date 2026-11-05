@@ -18,11 +18,20 @@
 #include <unistd.h>
 
 #include "log.h"
-
 static volatile int g_shutdown_requested = 0;
+static volatile int g_restart_requested = 0;
 
 void http_request_shutdown(void) {
   g_shutdown_requested = 1;
+}
+
+/*
+ * Called by the rest-mode watcher after wake: the listen socket
+ * usually dies with the network stack, so the accept loop must be
+ * exited and the whole server recreated (see main.cpp).
+ */
+void websrv_request_restart(void) {
+  g_restart_requested = 1;
 }
 
 /*
@@ -270,7 +279,8 @@ int http_serve(unsigned short port,
   }
 
   log_message("web UI listening on port %d\n", port);
-  while (!g_shutdown_requested) {
+  int accept_errors = 0;
+  while (!g_shutdown_requested && !g_restart_requested) {
     struct sockaddr_in client = {};
     socklen_t client_len = sizeof(client);
     const int conn_fd = accept(
@@ -280,9 +290,20 @@ int http_serve(unsigned short port,
         continue;
       }
       log_message("accept failed: errno=%d\n", errno);
+      /* Transient accept errors are retried on the same socket, but
+       * a streak of them means the listen socket itself is dead —
+       * this happens when the console wakes from rest mode and the
+       * network stack is re-initialized. Return to the caller (like
+       * ftpsrv) so the whole socket is recreated from scratch
+       * instead of looping as a zombie that never accepts again. */
+      if (++accept_errors >= 3) {
+        close(listen_fd);
+        return 2; /* recoverable: caller must re-create the server */
+      }
       sleep(1);
       continue;
     }
+    accept_errors = 0;
 
     struct timeval timeout = {};
     timeout.tv_sec = 5;
@@ -302,6 +323,11 @@ int http_serve(unsigned short port,
   }
 
   close(listen_fd);
+  if (g_restart_requested) {
+    g_restart_requested = 0;
+    log_message("web UI restart requested (rest mode wake)\n");
+    return 2;
+  }
   log_message("web UI stopped\n");
   return 0;
 }

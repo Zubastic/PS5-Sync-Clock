@@ -3,3 +3,4 @@ gen/
 sync-clock.elf
 .idea
 .DS_Store
+sync-clock-auto.elf

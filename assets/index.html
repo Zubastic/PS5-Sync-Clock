@@ -379,8 +379,11 @@
     display: grid;
     gap: 14px;
     align-content: start;
-    /* one crisp working-area card, like Game Compressor .content */
-    min-height: 850px;
+    /* one crisp working-area card, like Game Compressor .content.
+     * Fixed height = viewport minus topbar/footer/gaps (125px): the
+     * page itself never scrolls, the active tab scrolls INSIDE */
+    min-height: 0;
+    height: calc(100vh - 125px);
     border: 1px solid var(--line);
     border-radius: 28px;
     background: var(--surface);
@@ -388,6 +391,18 @@
     padding: 26px 28px;
     backdrop-filter: blur(22px);
     overflow: hidden;
+  }
+
+  /* Management tab: same frame, content scrolls inside the panel.
+   * The card must grow with its content (height:100% would clamp it
+   * and hide the excess) */
+  #panel-mgmt.is-active {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #panel-mgmt .card {
+    height: auto;
   }
 
   /* ---------- cards ---------- */
@@ -564,7 +579,14 @@
   /* ---------- clock table ---------- */
 
   .table-wrap {
+    overflow-y: auto;
     overflow-x: auto;
+  }
+
+  /* the frame only makes sense around the Info table (the Management
+   * options reuse .table-wrap as a plain block scroller: a grid
+   * scroller clips content in WebKit on iOS) */
+  .table-wrap:has(table) {
     border: 1px solid var(--line);
     border-radius: 14px;
   }
@@ -716,6 +738,9 @@
     color: var(--muted);
     font-size: 13px;
     padding: 2px 0 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ---------- responsive (Game Compressor breakpoints) ---------- */
@@ -726,12 +751,24 @@
     }
   }
 
+  /* on phones: the panel fills the FULL screen (100vh = the largest
+   * viewport on iOS, 852-class). The URL bar initially covers the
+   * bottom part; the first scroll collapses it and the working area
+   * becomes truly fullscreen */
   @media (max-width: 760px) {
     .app {
+      height: 100%;
+      min-height: 0;
       padding: 10px;
       gap: 10px;
       /* topbar wraps to two rows on mobile: let it size itself */
       grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    /* the footer is just the tagline: redundant on phones, eats
+     * vertical space from the working area */
+    footer {
+      display: none;
     }
 
     /* hide the UNIX SEC and Human (UTC) columns on phones:
@@ -741,33 +778,35 @@
       display: none;
     }
 
-    /* the table scrolls inside the card, not the page */
+    /* the grid stretches the panel over the whole middle row
+     * (height: auto + default align-self: stretch); its content
+     * scrolls INSIDE */
     .tab-panel.is-active {
+      height: auto;
+      max-height: none;
       min-height: 0;
-      height: calc(100vh - 170px);
       padding: 16px;
       border-radius: 20px;
       overflow: hidden;
     }
-
-    /* Management tab is short: do not stretch it, page stays scroll-free */
-    #panel-mgmt.is-active {
-      height: auto;
-      max-height: calc(100vh - 170px);
-      overflow: hidden;
-    }
-
-    .tab-panel .card {
-      min-height: 0;
-      overflow: hidden;
-    }
-
     .table-wrap {
       overflow-y: auto;
       overflow-x: auto;
       max-height: 100%;
       min-height: 0;
       flex: 1 1 auto;
+    }
+
+    /* Management options reuse .table-wrap as the scroll container.
+     * display:grid must NOT survive here: a grid scroller clips its
+     * content in WebKit on iOS (blocks past the first rows vanish /
+     * merge with the border). Plain block stacks the same way. */
+    #panel-mgmt .options {
+      display: block;
+    }
+
+    #panel-mgmt .option + .option {
+      margin-top: 9px;
     }
 
     .topbar {
@@ -951,7 +990,7 @@
   <div class="tab-panel" id="panel-mgmt">
     <section class="card">
       <h2>Management</h2>
-      <div class="options">
+      <div class="options table-wrap">
         <div class="option">
           <span class="option-name">NTP via console <span class="chip-recommended">recommended</span></span>
           <button class="primary-btn" id="ntp-console-btn" type="button">Sync</button>
@@ -970,12 +1009,30 @@
           <input id="ts" class="manual-input" type="number"
             placeholder="unix seconds (UTC), e.g. 1793695000" inputmode="numeric">
         </div>
+        <div class="option">
+          <span class="option-name">Sync all time <span class="chip-recommended">offline</span></span>
+          <button class="primary-btn" id="sync-all-btn" type="button">Sync</button>
+          <span class="option-desc">Re-aligns the drifting RTC domains with the
+            console's own wall clock and fills the srtc boot cache.</span>
+        </div>
+        <div class="option">
+          <span class="option-name">SRTC boot cache <span class="chip-recommended" id="srtc-state">loading...</span></span>
+          <button class="primary-btn" id="srtc-fix-btn" type="button">Fix</button>
+          <span class="option-desc">Fills the secure-RTC boot cache from the local
+            clock. Run per boot / after wake, or trophies get ts = 0.</span>
+        </div>
+        <div class="option">
+          <span class="option-name">SRTC softc probe (read-only)</span>
+          <button class="primary-btn" id="srtc-scan-btn" type="button">Scan</button>
+          <span class="option-desc" id="srtc-scan">not scanned yet</span>
+        </div>
       </div>
       <p class="status" id="msg"></p>
+      <p class="status" id="srtc-msg"></p>
     </section>
   </div>
 
-  <footer>PS5 Sync Clock &mdash; time setting payload for jailbroken PS5 consoles</footer>
+  <footer>Sync Clock &mdash; time sync for jailbroken PS5</footer>
 </div>
 
 <div class="modal-overlay" id="risk-modal" role="dialog" aria-modal="true" aria-labelledby="risk-title">
@@ -1096,8 +1153,12 @@ async function refresh(){
     const t = document.getElementById("times");
     const open = g_open_row;
     let html = "<tr><th>id</th><th>name</th><th>unix sec</th><th>human (UTC)</th></tr>";
-    for(let id=0; id<=20; ++id){
-      const v = j[String(id)];
+/* clockids hidden from the Info table: process CPU clocks (1/2/3),
+ * low-resolution duplicates (6) and unused ids (14) */
+const hiddenIds = {1:1, 2:1, 3:1, 6:1, 14:1};
+for(let id=0; id<=20; ++id){
+  if(hiddenIds[id]) continue;
+  const v = j[String(id)];
       const nm = names[id]||"";
       if(v !== null && v !== undefined){
         const cls = (v === 0) ? " epoch" : (id===16||id===17||id===19) ? " domain" : "";
@@ -1122,7 +1183,28 @@ async function refresh(){
     if(open===-1){
       html += "<tr class='row-detail'><td colspan='4'>"+detailHtml(-1, rt)+"</td></tr>";
     }
+    /* /dev/srtc — the source trophy timestamps come from */
+    if(j.srtc_opened === 1 && j.srtc_ioctl === 1){
+      const okSrtc = (j.srtc_status === 0);
+      const sunix = j.srtc_unix;
+      const sCls = (!okSrtc || sunix === 0) ? " epoch" : " domain";
+      html += "<tr class='data-row"+sCls+(open===-2?" is-open":"")+"' data-id='-2'>"+
+              "<td>S</td><td>SRTC Cache (/dev/srtc)</td><td>"+sunix+"</td><td>"+
+              (okSrtc && sunix > 0 ? fmt(sunix) : "status "+j.srtc_status.toString(16))+"</td></tr>";
+      if(open===-2){
+        html += "<tr class='row-detail'><td colspan='4'>"+
+          "<div class='detail-grid'>"+
+          "<div class='detail-name'>Description:</div><div>Source of trophy unlock timestamps. When status is non-zero new trophies get ts = 0.</div>"+
+          "<div class='detail-name'>Value:</div><div>"+j.srtc_sec+"</div>"+
+          "<div class='detail-name'>SAMU status:</div><div>0x"+j.srtc_status.toString(16)+(okSrtc?" (OK)":" — trophy ts will be 0")+"</div>"+
+          "<div class='detail-name'>Trophy ts:</div><div>"+(j.srtc_tick ? j.srtc_tick : "&mdash;")+"</div>"+
+          "</div></td></tr>";
+      }
+    }else{
+      html += "<tr class='data-row epoch'><td>S</td><td>SRTC Cache (/dev/srtc)</td><td colspan='2'>unavailable (errno "+j.srtc_errno+")</td></tr>";
+    }
     t.innerHTML = html;
+    updateSrtcState(j);
   }catch(e){}
 }
 
@@ -1206,6 +1288,81 @@ document.getElementById("theme-light").onclick = ()=>applyTheme(false);
   try{ saved = localStorage.getItem("sync-clock-theme"); }catch(e){}
   applyTheme(saved ? saved === "dark" : true);
 })();
+
+/* ---------- srtc (inside Management) ---------- */
+
+function setSrtcMsg(text, cls){
+  const m = document.getElementById("srtc-msg");
+  m.className = "status show" + (cls ? " " + cls : "");
+  m.textContent = text;
+}
+
+/* live state chip, fed from the /api/time payload in refresh() */
+function updateSrtcState(j){
+  const el = document.getElementById("srtc-state");
+  if(j.srtc_opened === 1 && j.srtc_ioctl === 1 && j.srtc_status === 0 &&
+     j.srtc_unix > 0){
+    el.textContent = "OK";
+  }else if(j.srtc_opened === 1 && j.srtc_ioctl === 1){
+    el.textContent = "broken 0x" + j.srtc_status.toString(16);
+  }else{
+    el.textContent = "unavailable";
+  }
+}
+
+async function srtcFix(){
+  const btn = document.getElementById("srtc-fix-btn");
+  btn.disabled = true;
+  setSrtcMsg("filling the boot-time cache (single kernel write)...");
+  try{
+    const r = await get("/api/srtc/fix");
+    if(r === null){
+      setSrtcMsg("failed to reach the console API", "err");
+      return;
+    }
+    let j = {};
+    try{ j = JSON.parse(r); }catch(e){}
+    if(j.ok){
+      setSrtcMsg("cache filled: status 0, srtc unix " + j.unix +
+                 " (" + fmt(j.unix) + ")", "ok");
+      updateSrtcState({srtc_opened:1, srtc_ioctl:1, srtc_status:0,
+                       srtc_unix:j.unix});
+    }else{
+      setSrtcMsg("fix failed: " + (j.detail || r || "unknown error"), "err");
+    }
+    refresh();
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function srtcScan(){
+  const btn = document.getElementById("srtc-scan-btn");
+  btn.disabled = true;
+  setSrtcMsg("probing the softc (read-only)...");
+  try{
+    const r = await get("/api/srtc/scan");
+    const el = document.getElementById("srtc-scan");
+    if(r === null){
+      setSrtcMsg("failed to reach the console API", "err");
+      return;
+    }
+    let j = {};
+    try{ j = JSON.parse(r); }catch(e){}
+    if(j.count === 1){
+      el.innerHTML = "<b>softc</b> " + j.softc + " — q28 (cache) " + j.q28 +
+                     (j.q28 === "0x0" ? " (empty → Fix needed)" : " (filled)");
+    }else{
+      el.innerHTML = "<b>not resolved:</b> " + (j.error || "?");
+    }
+    setSrtcMsg("scan done", "ok");
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("srtc-fix-btn").onclick = srtcFix;
+document.getElementById("srtc-scan-btn").onclick = srtcScan;
 
 /* ---------- management tab ---------- */
 
@@ -1296,6 +1453,54 @@ async function manualSet(){
 document.getElementById("ntp-browser-btn").onclick = ntpBrowser;
 document.getElementById("ntp-console-btn").onclick = ntpConsole;
 document.getElementById("manual-btn").onclick = manualSet;
+
+/* sync all timers in one click, fully OFFLINE: takes the console's own
+ * wall clock (CLOCK_REALTIME, the precise kernel counter) as the source,
+ * rewrites the drifting RTC domains 16/17 from it, then fills the srtc
+ * boot cache. No network needed. */
+async function syncAll(){
+  const btn = document.getElementById("sync-all-btn");
+  btn.disabled = true;
+  setMsg("reading the console clock...");
+  try{
+    const cur = await get("/api/time");
+    if(cur === null){
+      setMsg("failed to reach the console API", "err");
+      return;
+    }
+    let j = {};
+    try{ j = JSON.parse(cur); }catch(e){}
+    const ts = j.realtime;
+    if(!ts || ts < 946684800){
+      setMsg("console wall clock is not valid — set it via NTP/Manual first", "err");
+      return;
+    }
+    setMsg("setting wall clock + RTC domains (offline)...");
+    const resp = await get("/api/set?ts=" + ts);
+    if(resp === null){
+      setMsg("failed to reach the console API", "err");
+      return;
+    }
+    const wall = fmt(ts);
+    setSrtcMsg("filling the srtc boot cache...");
+    const fix = await get("/api/srtc/fix");
+    let fixTxt = "srtc cache: already valid";
+    if(fix !== null){
+      try{
+        const j2 = JSON.parse(fix);
+        if(j2.ok) fixTxt = "srtc cache: filled (unix " + j2.unix + ")";
+        else if(j2.detail) fixTxt = "srtc cache: " + j2.detail;
+      }catch(e){ fixTxt = "srtc cache: " + fix; }
+    }
+    setMsg("synced to " + wall + "; " + fixTxt, "ok");
+    setSrtcMsg(fixTxt, "ok");
+    refresh();
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("sync-all-btn").onclick = syncAll;
 
 /* ---------- stop payload ---------- */
 
